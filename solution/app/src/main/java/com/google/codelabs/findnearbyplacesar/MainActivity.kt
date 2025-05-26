@@ -14,8 +14,11 @@
 
 package com.google.codelabs.findnearbyplacesar
 
+import android.Manifest
+import android.annotation.SuppressLint
 import android.app.ActivityManager
 import android.content.Context
+import android.content.pm.PackageManager
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -24,7 +27,9 @@ import android.location.Location
 import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
+import androidx.annotation.RequiresPermission
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
 import androidx.core.content.getSystemService
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
@@ -35,7 +40,9 @@ import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.Marker
 import com.google.android.gms.maps.model.MarkerOptions
+import com.google.ar.core.ArCoreApk
 import com.google.ar.sceneform.AnchorNode
+import com.google.codelabs.findlocalplacesinar.R
 import com.google.codelabs.findnearbyplacesar.api.NearbyPlacesResponse
 import com.google.codelabs.findnearbyplacesar.api.PlacesService
 import com.google.codelabs.findnearbyplacesar.ar.PlaceNode
@@ -85,7 +92,19 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         placesService = PlacesService.create()
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
 
-        setUpAr()
+        val availability = ArCoreApk.getInstance().checkAvailability(this)
+        if (availability.isTransient) {
+            // ARCore 설치 가능 여부를 다시 확인해야 함
+            Log.e("ARCore", "ARCore 지원 여부를 다시 확인 중...")
+        } else if (availability.isSupported) {
+            // ARCore 지원됨
+            Log.e("ARCore", "ARCore가 지원됩니다.")
+            setUpAr()
+        } else {
+            // ARCore 지원되지 않음
+            Log.e("ARCore", "ARCore가 지원되지 않습니다.")
+        }
+
         setUpMaps()
     }
 
@@ -151,7 +170,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                         .position(place.geometry.location.latLng)
                         .title(place.name)
                 )
-                marker.tag = place
+                marker!!.tag = place
                 markers.add(marker)
             }
         }
@@ -176,27 +195,47 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     }
 
 
+    @SuppressLint("PotentialBehaviorOverride")
     private fun setUpMaps() {
-        mapFragment.getMapAsync { googleMap ->
-            googleMap.isMyLocationEnabled = true
-
-            getCurrentLocation {
-                val pos = CameraPosition.fromLatLngZoom(it.latLng, 13f)
-                googleMap.moveCamera(CameraUpdateFactory.newCameraPosition(pos))
-                getNearbyPlaces(it)
-            }
-            googleMap.setOnMarkerClickListener { marker ->
-                val tag = marker.tag
-                if (tag !is Place) {
-                    return@setOnMarkerClickListener false
+        mapFragment.getMapAsync @androidx.annotation.RequiresPermission(allOf = [android.Manifest.permission.ACCESS_FINE_LOCATION, android.Manifest.permission.ACCESS_COARSE_LOCATION]) { googleMap ->
+            if (ActivityCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.ACCESS_FINE_LOCATION
+                ) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                // TODO: Consider calling
+                //    ActivityCompat#requestPermissions
+                // here to request the missing permissions, and then overriding
+                //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
+                //                                          int[] grantResults)
+                // to handle the case where the user grants the permission. See the documentation
+                // for ActivityCompat#requestPermissions for more details.
+//                return
+            } else {
+                googleMap.isMyLocationEnabled = true
+                getCurrentLocation {
+                    val pos = CameraPosition.fromLatLngZoom(it.latLng, 13f)
+                    googleMap.moveCamera(CameraUpdateFactory.newCameraPosition(pos))
+                    getNearbyPlaces(it)
                 }
-                showInfoWindow(tag)
-                return@setOnMarkerClickListener true
+                googleMap.setOnMarkerClickListener { marker ->
+                    val tag = marker.tag
+                    if (tag !is Place) {
+                        return@setOnMarkerClickListener false
+                    }
+                    showInfoWindow(tag)
+                    return@setOnMarkerClickListener true
+                }
+                map = googleMap
             }
-            map = googleMap
+
         }
     }
 
+    @RequiresPermission(allOf = [Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION])
     private fun getCurrentLocation(onSuccess: (Location) -> Unit) {
         fusedLocationClient.lastLocation.addOnSuccessListener { location ->
             currentLocation = location
@@ -239,6 +278,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private fun isSupportedDevice(): Boolean {
         val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
         val openGlVersionString = activityManager.deviceConfigurationInfo.glEsVersion
+        Log.e(TAG, "OpenGL ES version: $openGlVersionString")
         if (openGlVersionString.toDouble() < 3.0) {
             Toast.makeText(this, "Sceneform requires OpenGL ES 3.0 or later", Toast.LENGTH_LONG)
                 .show()

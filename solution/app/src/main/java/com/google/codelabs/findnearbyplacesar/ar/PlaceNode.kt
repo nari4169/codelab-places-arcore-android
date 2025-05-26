@@ -19,7 +19,7 @@ import android.view.View
 import android.widget.TextView
 import com.google.ar.sceneform.Node
 import com.google.ar.sceneform.rendering.ViewRenderable
-import com.google.codelabs.findnearbyplacesar.R
+import com.google.codelabs.findlocalplacesinar.R
 import com.google.codelabs.findnearbyplacesar.model.Place
 
 class PlaceNode(
